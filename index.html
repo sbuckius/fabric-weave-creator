@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Woven Pattern — Fast, Full Code</title>
+  <style>
+    :root{--bg:#0f0f12;--fg:#e8e8ef;--muted:#9aa0aa;--accent:#6bd0ff}
+    html,body{height:100%;}
+    body{margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;}
+    .wrap{display:grid; grid-template-columns: 380px 1fr; gap:16px; padding:16px;}
+    .panel{background:#17171c; border:1px solid #262632; border-radius:14px; padding:14px;}
+    .panel h2{margin:0 0 10px 0; font-size:18px; font-weight:600}
+    .group{margin-bottom:12px}
+    label{font-size:13px; color:var(--muted); display:block; margin-bottom:6px}
+    input[type=file], input[type=text], select{width:100%;}
+    textarea{width:100%; min-height:120px; resize:vertical; background:#101018; color:var(--fg); border:1px solid #2b2b39; border-radius:10px; padding:10px; font-size:14px;}
+    button{appearance:none; border:0; background:linear-gradient(135deg, #35b4ff, #8a7dff); color:white; padding:10px 14px; font-weight:600; border-radius:10px; cursor:pointer;}
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+    .btnrow{display:flex; gap:8px; flex-wrap:wrap}
+    .note{font-size:12px; color:var(--muted)}
+    canvas{border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.35);}
+    .mini{display:flex; gap:6px; flex-wrap:wrap}
+    .mini img{width:52px; height:52px; object-fit:cover; border-radius:8px; border:1px solid #2b2b39}
+    .controls-grid{display:grid; grid-template-columns: 1fr 1fr; gap:8px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel" id="controls">
+      <h2>Inputs</h2>
+
+      <div class="group">
+        <label>Upload 6 images that show unbiased images of people working with technology.</label>
+        <div class="row">
+          <input type="file" id="img0" accept="image/*" />
+          <input type="file" id="img1" accept="image/*" />
+        </div>
+        <div class="row">
+          <input type="file" id="img2" accept="image/*" />
+          <input type="file" id="img3" accept="image/*" />
+        </div>
+        <div class="row">
+          <input type="file" id="img4" accept="image/*" />
+          <input type="file" id="img5" accept="image/*" />
+        </div>
+      </div>
+
+      <div class="group">
+        <label for="structure">Upload a black and white image of a diverse group of people working with technology</label>
+        <input type="file" id="structure" accept="image/*" />
+        <div class="note">White ⇒ bright horizontal (warm). Black ⇒ dark vertical (cool).</div>
+      </div>
+
+      <div class="group">
+        <label for="letterInput">Choose the letter that controls randomness</label>
+        <input type="text" id="letterInput" maxlength="1" placeholder="Enter one letter (e.g., e)" />
+      </div>
+
+      <div class="group">
+        <label for="bigtext">Upload the text of a patent by a woman</label>
+        <textarea id="bigtext" placeholder="Paste or type the patent text here..."></textarea>
+      </div>
+
+      <div class="group mini" id="thumbs"></div>
+
+      <h2>Performance</h2>
+      <div class="group controls-grid">
+        <div>
+          <label for="canvasSize">Canvas size</label>
+          <select id="canvasSize">
+            <option value="1024x768">1024 × 768</option>
+            <option value="800x600">800 × 600</option>
+            <option value="640x480">640 × 480</option>
+          </select>
+        </div>
+        <div>
+          <label for="renderScale">Render scale (internal)</label>
+          <select id="renderScale">
+            <option value="1">1.0 (sharpest)</option>
+            <option value="0.75">0.75</option>
+            <option value="0.5" selected>0.5 (fastest)</option>
+          </select>
+        </div>
+        <div>
+          <label for="cellSize">Cell size</label>
+          <input id="cellSize" type="range" min="6" max="18" step="1" value="8" />
+        </div>
+        <div>
+          <label for="texturesOn">Thread textures</label>
+          <select id="texturesOn">
+            <option value="on" selected>On</option>
+            <option value="off">Off</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="group btnrow">
+        <button id="go">Generate woven pattern</button>
+        <button id="save">Save image (PNG)</button>
+      </div>
+
+      <div class="note">Tips: reduce Canvas size or increase Cell size for speed. Lower Render scale draws to a smaller off‑screen buffer then scales up (very fast).</div>
+    </div>
+
+    <div class="panel">
+      <h2>Canvas</h2>
+      <div id="sketch-holder"></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script>
+    // p5 performance toggles
+    p5.disableFriendlyErrors = true;
+
+    const thumbs = document.getElementById('thumbs');
+    const textArea = document.getElementById('bigtext');
+    const letterInput = document.getElementById('letterInput');
+    const button = document.getElementById('go');
+    const saveBtn = document.getElementById('save');
+    const structureInput = document.getElementById('structure');
+
+    const ddCanvas = document.getElementById('canvasSize');
+    const ddScale = document.getElementById('renderScale');
+    const rngCell = document.getElementById('cellSize');
+    const ddTextures = document.getElementById('texturesOn');
+
+    const loadedImgs = new Array(6).fill(null);
+    let structureImg = null;
+    let clickCount = 0;
+
+    for (let i=0;i<6;i++){
+      const el = document.getElementById('img'+i);
+      el.addEventListener('change', (e)=> handleContentImage(i, e.target.files?.[0]));
+    }
+    structureInput.addEventListener('change', (e)=> handleStructureImage(e.target.files?.[0]));
+
+    function handleContentImage(idx, file){
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev)=>{
+        const dataURL = ev.target.result;
+        ensureThumb(idx, dataURL);
+        if(window._p5Sketch){
+          window._p5Sketch.loadImage(dataURL, (img)=>{ loadedImgs[idx] = img; window._p5Sketch.redraw(); });
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function handleStructureImage(file){
+      if(!file) { structureImg = null; return; }
+      const reader = new FileReader();
+      reader.onload = (ev)=>{
+        const dataURL = ev.target.result;
+        ensureThumb('S', dataURL);
+        if(window._p5Sketch){
+          window._p5Sketch.loadImage(dataURL, (img)=>{ structureImg = img; window._p5Sketch.redraw(); });
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function ensureThumb(idx, url){
+      let thumb = document.querySelector(`[data-thumb="${idx}"]`);
+      if(!thumb){
+        thumb = document.createElement('img');
+        thumb.dataset.thumb = String(idx);
+        thumbs.appendChild(thumb);
+      }
+      thumb.src = url;
+    }
+
+    function countLetter(str, letter){
+      if(!str || !letter) return 0;
+      const regex = new RegExp(letter, 'gi');
+      const matches = str.match(regex);
+      return matches ? matches.length : 0;
+    }
+
+    const sketch = (p)=>{
+      let W = 1024, H = 768, SCALE = 0.5, CELL = 8, USE_TEXTURES = true;
+      let buf; // offscreen buffer for scaled render
+      let horizTex, vertTex;
+      let structGrid = null; // boolean grid at buffer resolution
+      let gridCols = 0, gridRows = 0;
+
+      p.setup = ()=>{
+        const [w,h] = getCanvasDims();
+        W = w; H = h; SCALE = parseFloat(ddScale.value); CELL = parseInt(rngCell.value,10);
+        const c = p.createCanvas(W, H);
+        c.parent('sketch-holder');
+        p.pixelDensity(1); // keep work constant across screens
+        p.noLoop();
+        window._p5Sketch = p;
+        createOrResizeBuffer();
+        makeTextures();
+        // Disable smoothing for crisp upscaling
+        p.drawingContext.imageSmoothingEnabled = false;
+      };
+
+      function getCanvasDims(){
+        const [w,h] = ddCanvas.value.split('x').map(Number);
+        return [w,h];
+      }
+
+      function createOrResizeBuffer(){
+        const bw = Math.max(1, Math.floor(W * SCALE));
+        const bh = Math.max(1, Math.floor(H * SCALE));
+        buf = p.createGraphics(bw, bh);
+        buf.pixelDensity(1);
+        buf.noLoop?.();
+        // also set smoothing off for buffer
+        buf.drawingContext.imageSmoothingEnabled = false;
+      }
+
+      function makeTextures(){
+        horizTex = p.createGraphics(32, 8);
+        horizTex.pixelDensity(1);
+        horizTex.stroke(255, 180, 120, 140);
+        for(let y=1; y<8; y+=2) horizTex.line(0, y, 32, y);
+
+        vertTex = p.createGraphics(8, 32);
+        vertTex.pixelDensity(1);
+        vertTex.stroke(80, 130, 255, 180);
+        for(let x=1; x<8; x+=2) vertTex.line(x, 0, x, 32);
+      }
+
+      function pickImg(rangeStart, rangeEnd){
+        const idxs = [];
+        for(let i=rangeStart;i<=rangeEnd;i++){ idxs.push(i); }
+        p.shuffle(idxs, true);
+        for(const i of idxs){ if(loadedImgs[i]) return loadedImgs[i]; }
+        const g = p.createGraphics(64,64);
+        g.noStroke();
+        for(let y=0;y<64;y+=8){ for(let x=0;x<64;x+=8){ g.fill(p.random(40,220), p.random(40,220), p.random(40,220)); g.rect(x,y,8,8); }}
+        return g;
+      }
+
+      function drawCroppedG(g, img, x, y, w, h){
+        const srcW = img.width, srcH = img.height;
+        const cw = Math.max(6, srcW * p.random(0.2, 0.4));
+        const ch = Math.max(6, srcH * p.random(0.2, 0.4));
+        const sx = p.random(0, Math.max(1, srcW - cw));
+        const sy = p.random(0, Math.max(1, srcH - ch));
+        g.image(img, x, y, w, h, sx, sy, cw, ch);
+      }
+
+      function buildGrid(){
+        const cellW = Math.max(4, Math.floor(CELL * SCALE)); // scale cell with buffer
+        const cellH = Math.max(4, Math.floor(CELL * SCALE));
+        gridCols = Math.ceil(buf.width / cellW);
+        gridRows = Math.ceil(buf.height / cellH);
+        return {cellW, cellH};
+      }
+
+      function buildStructureGrid(cellW, cellH){
+        if(!structureImg){ structGrid = null; return; }
+        const g = p.createGraphics(gridCols, gridRows);
+        g.pixelDensity(1);
+        g.image(structureImg, 0, 0, gridCols, gridRows);
+        g.loadPixels();
+        structGrid = Array.from({length:gridRows}, (_,r)=>Array(gridCols));
+        for(let r=0; r<gridRows; r++){
+          for(let c=0; c<gridCols; c++){
+            const idx = 4 * (c + r * gridCols);
+            const bright = (g.pixels[idx] + g.pixels[idx+1] + g.pixels[idx+2]) / 3;
+            structGrid[r][c] = bright >= 128; // true => white region
+          }
+        }
+      }
+
+      function drawRegionPass(g, isWhite, cellW, cellH){
+        const img = isWhite ? pickImg(3,5) : pickImg(0,2);
+        if(isWhite){ g.tint(255, 220, 180, 220); } else { g.tint(80, 130, 255, 220); }
+        for(let r=0; r<gridRows; r++){
+          for(let c=0; c<gridCols; c++){
+            const x = c * cellW, y = r * cellH;
+            const regionWhite = structGrid ? structGrid[r][c] : ((r + c) % 2 === 0);
+            if(regionWhite === isWhite){
+              drawCroppedG(g, img, x, y, cellW, cellH);
+              if(USE_TEXTURES){
+                if(isWhite){ g.image(horizTex, x, y, cellW, cellH); }
+                else { g.image(vertTex, x, y, cellW, cellH); }
+              }
+            }
+          }
+        }
+        g.noTint();
+      }
+
+      function drawWeave(){
+        // pull latest UI values
+        const [w,h] = getCanvasDims();
+        const newScale = parseFloat(ddScale.value);
+        const newCell = parseInt(rngCell.value,10);
+        USE_TEXTURES = (ddTextures.value === 'on');
+        if(w!==W || h!==H || newScale!==SCALE){ W=w; H=h; SCALE=newScale; p.resizeCanvas(W,H); createOrResizeBuffer(); }
+        CELL = newCell;
+
+        // RNG from text+letter
+        const text = textArea.value || '';
+        const letter = letterInput.value || 'e';
+        const count = countLetter(text, letter);
+        const baseSeed = Math.max(1, count);
+        const seed = baseSeed + clickCount;
+        p.randomSeed(seed); p.noiseSeed(seed * 9973);
+        buf.clear();
+        buf.background(11,11,15);
+
+        const {cellW, cellH} = buildGrid();
+        buildStructureGrid(cellW, cellH);
+        drawRegionPass(buf, false, cellW, cellH); // black regions (vertical / cool)
+        drawRegionPass(buf, true,  cellW, cellH); // white regions (horizontal / warm)
+
+        // paint buffer to main canvas
+        p.clear();
+        p.drawingContext.imageSmoothingEnabled = false;
+        p.image(buf, 0, 0, W, H);
+
+        // HUD
+        p.noStroke(); p.fill(0,140); p.rect(12,12,460,56,10);
+        p.fill(255); p.textFont('monospace'); p.textSize(12);
+        p.text(`letter:'${letter}' count:${count} seed:${seed} click:${clickCount} grid:${gridCols}x${gridRows} scale:${SCALE} cell:${CELL}`, 22, 44);
+      }
+
+      p.draw = ()=>{ drawWeave(); };
+    };
+
+    const P = new p5(sketch);
+
+    button.addEventListener('click', ()=>{
+      clickCount++;
+      if(window._p5Sketch){ window._p5Sketch.redraw(); }
+    });
+
+    saveBtn.addEventListener('click', ()=>{
+      if(window._p5Sketch){
+        const fname = `woven_${Date.now()}`;
+        window._p5Sketch.saveCanvas(fname, 'png');
+      }
+    });
+  </script>
+</body>
+</html>
